@@ -47,3 +47,118 @@ $ npm run start:dev
 
 # Run tests
 $ npm run test
+```
+
+## Architecture & Design (Lab 2)
+
+### 1. Component Diagram (Modules)
+The application follows the modular architecture provided by NestJS. Each feature is encapsulated in its own module containing the Controller (API layer), Service (Business Logic), and Repository (Data Access).
+
+```mermaid
+graph TD
+    Client[Client App / Postman] --> API_GW[API Gateway / Nginx]
+    API_GW --> AppModule
+    
+    subgraph "NestJS Application"
+        AppModule --> AuthModule
+        AppModule --> UsersModule
+        AppModule --> ProductsModule
+        AppModule --> WarehousesModule
+        AppModule --> InventoryModule
+        AppModule --> TransactionsModule
+        
+        InventoryModule -.->|uses| ProductsModule
+        InventoryModule -.->|uses| WarehousesModule
+        TransactionsModule -.->|monitors changes| InventoryModule
+    end
+
+    subgraph "Data Layer"
+        DB[(PostgreSQL Database)]
+    end
+
+    AuthModule --> DB
+    UsersModule --> DB
+    ProductsModule --> DB
+    WarehousesModule --> DB
+    InventoryModule --> DB
+    TransactionsModule --> DB
+```
+
+### 2. Entity-Relationship Diagram (ERD)
+The database is normalized to ensure data integrity. The central entity is `Inventory` (Stock), linking Products to Warehouses.
+
+```mermaid
+erDiagram
+    User ||--o{ Transaction : performs
+    
+    Product ||--o{ Inventory : "stored in"
+    Product ||--o{ Transaction : "referenced in"
+    
+    Warehouse ||--o{ Inventory : "contains"
+    Warehouse ||--o{ Transaction : "source/destination"
+    
+    Inventory {
+        int id PK
+        int productId FK
+        int warehouseId FK
+        int quantity "Current amount"
+        int minStockLevel "Alert threshold"
+    }
+
+    Product {
+        int id PK
+        string sku "Unique code"
+        string name
+        string description
+    }
+
+    Warehouse {
+        int id PK
+        string name
+        string location
+    }
+
+    Transaction {
+        int id PK
+        int userId FK "Who did it"
+        int productId FK
+        int fromWarehouseId FK "Nullable (for Import)"
+        int toWarehouseId FK "Nullable (for Export)"
+        int amount
+        enum type "IN, OUT, TRANSFER"
+        timestamp createdAt
+    }
+```
+
+### 3. Key Data Scenarios
+
+#### Scenario A: Supply (Inbound Transaction)
+**Goal**: Add new items to a specific warehouse.
+1.  **Input**: `warehouseId`, `productId`, `amount`.
+2.  **Process**:
+    * System checks if an `Inventory` record exists for this Product+Warehouse pair.
+    * If **Yes**: Update `Inventory.quantity = Inventory.quantity + amount`.
+    * If **No**: Create a new `Inventory` record with initial quantity.
+    * Create a `Transaction` record with type `IN`.
+3.  **Result**: Stock increases, audit log created.
+
+#### Scenario B: Internal Transfer
+**Goal**: Move goods from Warehouse A to Warehouse B.
+1.  **Input**: `fromWarehouseId`, `toWarehouseId`, `productId`, `amount`.
+2.  **Process**:
+    * **Validation**: Check if `Inventory` at `fromWarehouseId` has enough quantity (`quantity >= amount`).
+    * **Atomic Operation (DB Transaction)**:
+        * Decrement `quantity` at Source Warehouse.
+        * Increment `quantity` at Target Warehouse (or create record if missing).
+        * Create `Transaction` record with type `TRANSFER`.
+    * If any step fails, the entire operation rolls back.
+3.  **Result**: Total system stock remains same, distribution changes.
+
+#### Scenario C: Sale / Write-off (Outbound)
+**Goal**: Reduce stock due to sale or damage.
+1.  **Input**: `warehouseId`, `productId`, `amount`, `reason`.
+2.  **Process**:
+    * Check availability.
+    * Decrement `Inventory.quantity`.
+    * Create `Transaction` record with type `OUT`.
+3.  **Result**: Stock decreases.
