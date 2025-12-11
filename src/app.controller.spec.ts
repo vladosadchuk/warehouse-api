@@ -15,8 +15,10 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('should return API info', () => {
+      const result = appController.getHello();
+      expect(result).toHaveProperty('name', 'Smart Warehouse API');
+      expect(result).toHaveProperty('version');
     });
   });
 });
