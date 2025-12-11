@@ -3,13 +3,17 @@ import { SupplyInventoryDto } from './dto/supply-inventory.dto';
 import { TransferInventoryDto } from './dto/transfer-inventory.dto';
 import { InventoryRepository } from './inventory.repository';
 import { WriteOffInventoryDto } from './dto/write-off-inventory.dto';
+import { TransactionsService } from '../transactions/transactions.service';
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly inventoryRepository: InventoryRepository) {}
+  constructor(
+    private readonly inventoryRepository: InventoryRepository,
+    private readonly transactionsService: TransactionsService,
+  ) {}
 
   // Scenario A: Supply
-  async supply(dto: SupplyInventoryDto) {
+  async supply(dto: SupplyInventoryDto, username: string) {
     const item = await this.inventoryRepository.findByProductAndWarehouse(
       dto.productId,
       dto.warehouseId,
@@ -26,11 +30,19 @@ export class InventoryService {
       });
     }
 
+    await this.transactionsService.log({
+      type: 'IN',
+      productId: dto.productId,
+      warehouseId: dto.warehouseId,
+      amount: dto.amount,
+      performedBy: username,
+    });
+
     return { message: 'Supply successful' };
   }
 
   // Scenario B: Transfer
-  async transfer(dto: TransferInventoryDto) {
+  async transfer(dto: TransferInventoryDto, username: string) {
     const sourceItem = await this.inventoryRepository.findByProductAndWarehouse(
       dto.productId,
       dto.fromWarehouseId,
@@ -61,10 +73,18 @@ export class InventoryService {
     await this.inventoryRepository.save(sourceItem);
     await this.inventoryRepository.save(targetItem);
 
+    await this.transactionsService.log({
+      type: 'TRANSFER',
+      productId: dto.productId,
+      warehouseId: dto.toWarehouseId,
+      amount: dto.amount,
+      performedBy: username,
+    });
+
     return { message: 'Transfer successful' };
   }
 
-  async writeOff(dto: WriteOffInventoryDto) {
+  async writeOff(dto: WriteOffInventoryDto, username: string) {
     const item = await this.inventoryRepository.findByProductAndWarehouse(
       dto.productId,
       dto.warehouseId,
@@ -76,6 +96,14 @@ export class InventoryService {
 
     item.quantity -= dto.amount;
     await this.inventoryRepository.save(item);
+
+    await this.transactionsService.log({
+      type: 'OUT',
+      productId: dto.productId,
+      warehouseId: dto.warehouseId,
+      amount: dto.amount,
+      performedBy: username,
+    });
 
     return {
       message: 'Write-off successful',

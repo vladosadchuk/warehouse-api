@@ -3,32 +3,45 @@ import {
   Get,
   Post,
   Body,
+  Param,
   Delete,
   Query,
-  Param,
+  UseGuards,
+  Request,
 } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { SupplyInventoryDto } from './dto/supply-inventory.dto';
 import { TransferInventoryDto } from './dto/transfer-inventory.dto';
 import { WriteOffInventoryDto } from './dto/write-off-inventory.dto';
+import { JwtAuthGuard } from '../common/jwt-auth.guard';
+import { RolesGuard } from '../common/roles.guard';
+import { Roles } from '../common/roles.decorator';
+
+interface RequestWithUser {
+  user: { username: string; userId: number; role: string };
+}
 
 @Controller('inventory')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
   @Post('supply')
-  supply(@Body() dto: SupplyInventoryDto) {
-    return this.inventoryService.supply(dto);
+  @Roles('ADMIN', 'MANAGER')
+  supply(@Body() dto: SupplyInventoryDto, @Request() req: RequestWithUser) {
+    return this.inventoryService.supply(dto, req.user.username);
   }
 
   @Post('transfer')
-  transfer(@Body() dto: TransferInventoryDto) {
-    return this.inventoryService.transfer(dto);
+  @Roles('ADMIN', 'MANAGER')
+  transfer(@Body() dto: TransferInventoryDto, @Request() req: RequestWithUser) {
+    return this.inventoryService.transfer(dto, req.user.username);
   }
 
   @Post('write-off')
-  writeOff(@Body() dto: WriteOffInventoryDto) {
-    return this.inventoryService.writeOff(dto);
+  @Roles('ADMIN', 'MANAGER')
+  writeOff(@Body() dto: WriteOffInventoryDto, @Request() req: RequestWithUser) {
+    return this.inventoryService.writeOff(dto, req.user.username);
   }
 
   @Get()
@@ -42,6 +55,7 @@ export class InventoryController {
   }
 
   @Delete()
+  @Roles('ADMIN')
   remove(
     @Query('productId') productId: string,
     @Query('warehouseId') warehouseId: string,
